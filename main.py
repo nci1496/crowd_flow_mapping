@@ -308,7 +308,11 @@ class SimulationRunner:
 
         ground_truth = self.simulator.get_ground_truth_flow_field(self.config.grid)
 
-        estimated_flow = self.mapper.update(scan_result, self.robot_pose)
+        robot_vel = (
+            float(self.robot_controller._velocity[0]),
+            float(self.robot_controller._velocity[1])
+        )
+        estimated_flow = self.mapper.update(scan_result, self.robot_pose, robot_vel)
 
         errors = self.analyzer.compute_errors(ground_truth, estimated_flow)
 

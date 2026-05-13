@@ -66,7 +66,8 @@ class FlowMapper:
     def update(
         self,
         scan_result: List[Dict],
-        robot_pose: Tuple[float, float, float]
+        robot_pose: Tuple[float, float, float],
+        robot_velocity: Tuple[float, float] = (0.0, 0.0)
     ) -> np.ndarray:
         """
         Update the flow field based on new scan results.
@@ -74,6 +75,7 @@ class FlowMapper:
         Args:
             scan_result: List of scan detections from the robot scanner
             robot_pose: Robot pose (x, y, heading)
+            robot_velocity: Robot velocity (vx, vy) for converting relative to absolute velocity
 
         Returns:
             Updated flow field array of shape (H, W, 3)
@@ -87,7 +89,7 @@ class FlowMapper:
             return self.get_flow_field()
 
         for detection in scan_result:
-            self._process_detection(detection, robot_pose)
+            self._process_detection(detection, robot_pose, robot_velocity)
 
         self._apply_interpolation()
 
@@ -111,7 +113,8 @@ class FlowMapper:
     def _process_detection(
         self,
         detection: Dict,
-        robot_pose: Tuple[float, float, float]
+        robot_pose: Tuple[float, float, float],
+        robot_velocity: Tuple[float, float] = (0.0, 0.0)
     ) -> None:
         """
         Process a single scan detection and update relevant cells.
@@ -119,6 +122,7 @@ class FlowMapper:
         Args:
             detection: Scan detection dictionary
             robot_pose: Robot pose (x, y, heading)
+            robot_velocity: Robot velocity (vx, vy) for converting relative to absolute velocity
         """
         robot_x, robot_y, robot_heading = robot_pose
 
@@ -130,27 +134,28 @@ class FlowMapper:
             return
 
         rel_vel = detection["relative_velocity"]
+        abs_vel = (rel_vel[0] + robot_velocity[0], rel_vel[1] + robot_velocity[1])
 
         if self.mapper_config.update_method == "nearest":
-            self._update_nearest(cell_x, cell_y, detection, rel_vel)
+            self._update_nearest(cell_x, cell_y, detection, abs_vel)
         elif self.mapper_config.update_method == "gaussian":
-            self._update_gaussian(cell_x, cell_y, detection, rel_vel, robot_pose)
+            self._update_gaussian(cell_x, cell_y, detection, abs_vel, robot_pose)
         elif self.mapper_config.update_method == "linear":
-            self._update_linear(cell_x, cell_y, detection, rel_vel)
+            self._update_linear(cell_x, cell_y, detection, abs_vel)
         else:
-            self._update_nearest(cell_x, cell_y, detection, rel_vel)
+            self._update_nearest(cell_x, cell_y, detection, abs_vel)
 
     def _update_nearest(
         self,
         cell_x: int,
         cell_y: int,
         detection: Dict,
-        rel_vel: List[float]
+        abs_vel: Tuple[float, float]
     ) -> None:
         """Update using nearest neighbor method."""
         self._temp_density[cell_y, cell_x] += 1
-        self._temp_velocity_x[cell_y, cell_x] += rel_vel[0]
-        self._temp_velocity_y[cell_y, cell_x] += rel_vel[1]
+        self._temp_velocity_x[cell_y, cell_x] += abs_vel[0]
+        self._temp_velocity_y[cell_y, cell_x] += abs_vel[1]
         self._temp_count[cell_y, cell_x] += 1
 
     def _update_gaussian(
@@ -158,7 +163,7 @@ class FlowMapper:
         cell_x: int,
         cell_y: int,
         detection: Dict,
-        rel_vel: List[float],
+        abs_vel: Tuple[float, float],
         robot_pose: Tuple[float, float, float]
     ) -> None:
         """Update using Gaussian kernel weighting."""
@@ -181,8 +186,8 @@ class FlowMapper:
                 weight = np.exp(-(dist**2) / (2 * sigma**2))
 
                 self._temp_density[cy, cx] += weight
-                self._temp_velocity_x[cy, cx] += weight * rel_vel[0]
-                self._temp_velocity_y[cy, cx] += weight * rel_vel[1]
+                self._temp_velocity_x[cy, cx] += weight * abs_vel[0]
+                self._temp_velocity_y[cy, cx] += weight * abs_vel[1]
                 self._temp_count[cy, cx] += weight
 
     def _update_linear(
@@ -190,7 +195,7 @@ class FlowMapper:
         cell_x: int,
         cell_y: int,
         detection: Dict,
-        rel_vel: List[float]
+        abs_vel: Tuple[float, float]
     ) -> None:
         """Update using linear interpolation (bilinear)."""
         radius = 1
@@ -206,8 +211,8 @@ class FlowMapper:
                     weight = max(0, 1 - dist / (radius + 1))
 
                     self._temp_density[cy, cx] += weight
-                    self._temp_velocity_x[cy, cx] += weight * rel_vel[0]
-                    self._temp_velocity_y[cy, cx] += weight * rel_vel[1]
+                    self._temp_velocity_x[cy, cx] += weight * abs_vel[0]
+                    self._temp_velocity_y[cy, cx] += weight * abs_vel[1]
                     self._temp_count[cy, cx] += weight
 
     def _apply_interpolation(self) -> None:
