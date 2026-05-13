@@ -12,7 +12,7 @@ This project simulates a robot scanning a crowd environment and reconstructing t
 - **Error Analysis**: Comprehensive error metrics and visualization
 - **Visualization**: Static plots and animated visualizations
 
-
+![crowdflow_photo](/crowd_flow.png)
 
 ## Project Structure
 
